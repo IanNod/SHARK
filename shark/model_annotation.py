@@ -38,6 +38,7 @@ def model_annotation(
         data = json.load(f)
         configs = data["options"]
 
+    add_name_ids(module.operation, 0)
     # The Python API does not expose a general walk() function, so we just
     # do it ourselves.
     walk_children(module.operation, configs, 0, search_op)
@@ -46,6 +47,21 @@ def model_annotation(
         raise RuntimeError("Modified program does not verify!")
 
     return module
+
+def add_name_ids(op: ir.Operation, idx: int):
+    for region in op.regions:
+        for block in region.blocks:
+            for child_op in block.operations:
+                if isinstance(child_op, ir.OpView):
+                    child_op = child_op.operation
+                try:
+                    name_id = child_op.attributes["name_id"]
+                    idx += 1
+                except:
+                    new_id = child_op.name + "_" + str(idx)
+                    add_attribute_by_name(child_op, "name_id", new_id)
+                    idx += 1
+                add_name_ids(child_op, idx)
 
 
 def walk_children(
@@ -65,9 +81,15 @@ def walk_children(
             "linalg.matmul",
             "linalg.batch_matmul",
             "linalg.conv_2d_nhwc_hwcf",
-        ]
+            "linalg.generic",
+            "linalg.fill",
+            "linalg.init_tensor",
+            "linalg.index",
+            ]
     else:
         raise ValueError(f"{search_op} op is not tunable.")
+
+    device = [[0]]
 
     for region in op.regions:
         for block in region.blocks:
@@ -76,10 +98,21 @@ def walk_children(
                 # 'operation' and 'name' attributes.
                 if isinstance(child_op, ir.OpView):
                     child_op = child_op.operation
-                if child_op.name in op_names and idx < len(configs):
+                if child_op.name in op_names and idx < len(configs) and child_op.name in configs[idx]["name_id"]:
+                    print("hello?")
                     add_attributes(child_op, configs[idx])
+                    try:
+                        print("new devices")
+                        devices = configs[idx]["devices"]
+                        device = devices
+                    except:
+                        devices = device
+                    print("config: ", device)
                     idx = idx + 1
                     print(f"Updated op {child_op}", file=sys.stderr)
+                elif child_op.name in op_names:
+                    print(device)
+                    add_attribute_by_name(child_op, "devices", device)
                 walk_children(child_op, configs, idx, search_op)
 
 
@@ -94,13 +127,13 @@ def add_attributes(op: ir.Operation, config: Dict):
         shard_sizes,
     ) = parse_config(config)
 
-    add_compilation_info(
-        op,
-        tile_sizes=tile_sizes,
-        pipeline=pipeline,
-        workgroup_size=workgroup_size,
-        pipeline_depth=pipeline_depth,
-    )
+#    add_compilation_info(
+#        op,
+#        tile_sizes=tile_sizes,
+#        pipeline=pipeline,
+#        workgroup_size=workgroup_size,
+#        pipeline_depth=pipeline_depth,
+#    )
 
     if split_k:
         add_attribute_by_name(op, "iree_flow_split_k", split_k)
@@ -116,8 +149,10 @@ def parse_config(config: Dict):
             if config["pipeline"] == "GPU"
             else "LLVMGPUMatmulTensorCore"
         )
-        tile_sizes = [config["work_group_tile_sizes"]]
-        workgroup_size = config["work_group_sizes"]
+        #tile_sizes = [config["work_group_tile_sizes"]]
+        #workgroup_size = config["work_group_sizes"]
+        tile_sizes = None
+        workgroup_size = None
         try:
             pipeline_depth = config["pipeline_depth"]
         except:
@@ -178,6 +213,8 @@ def add_compilation_info(
 def add_attribute_by_name(op: ir.Operation, name: str, val: int):
     if isinstance(val, list):
         attr = ir.ArrayAttr.get(array_from_list(val))    
+    elif isinstance(val, str):
+        attr = ir.StringAttr.get(val)
     else:
         attr = ir.IntegerAttr.get(ir.IntegerType.get_signless(64), val)
     op.attributes[name] = attr
