@@ -1,12 +1,12 @@
-{"options": 
-  [
+[
     {
-      "work_group_tile_sizes": [2,2],
-      "work_group_sizes": [1,1],
       "pipeline": "GPU",
       "devices": [[1]],
+      "name_id": "linalg.generic_10"
+    },
+    {
+      "pipeline": "GPU",
+      "devices": [[2]],
       "name_id": "linalg.matmul_13"
     }
-  ] 
-}
-
+]

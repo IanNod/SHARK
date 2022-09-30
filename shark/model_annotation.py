@@ -33,10 +33,9 @@ def model_annotation(
             input_contents = f.read()
 
     module = ir.Module.parse(input_contents)
-
     with open(config_path, "r") as f:
         data = json.load(f)
-        configs = data["options"]
+        configs = data#["options"]
 
     add_name_ids(module.operation, 0)
     # The Python API does not expose a general walk() function, so we just
@@ -96,13 +95,12 @@ def walk_children(
             for child_op in block.operations:
                 # TODO: This is dumb. Both Operation and OpView should expose
                 # 'operation' and 'name' attributes.
+                print("len configs = ", len(configs))
                 if isinstance(child_op, ir.OpView):
                     child_op = child_op.operation
                 if child_op.name in op_names and idx < len(configs) and child_op.name in configs[idx]["name_id"]:
-                    print("hello?")
                     add_attributes(child_op, configs[idx])
                     try:
-                        print("new devices")
                         devices = configs[idx]["devices"]
                         device = devices
                     except:
